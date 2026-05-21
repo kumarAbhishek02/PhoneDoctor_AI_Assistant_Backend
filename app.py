@@ -7,7 +7,6 @@ try:
 except ImportError:
     pass
 
-# Streamlit Page Configuration
 st.set_page_config(
     page_title="PhoneDoctor AI Assistant",
     page_icon="🩺",
@@ -15,7 +14,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Premium Styling & Theme Override
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
@@ -233,13 +231,11 @@ st.markdown("""
 def get_gemini_api_key():
     """Gets the Gemini API key, prioritizing Streamlit Secrets for cloud deployment, falling back to local environment variables."""
     try:
-        # Check Streamlit secrets first (for Streamlit Community Cloud)
         if "GEMINI_API_KEY" in st.secrets:
             return st.secrets["GEMINI_API_KEY"]
     except Exception:
         pass
     
-    # Fallback to local environment variables
     return os.getenv("GEMINI_API_KEY")
 
 
@@ -248,7 +244,6 @@ def get_direct_gemini_response(api_key, prompt, image_bytes=None, image_mime=Non
     if not api_key:
         return "System Configuration Error: Gemini API Key is missing. Please add GEMINI_API_KEY in your .env file."
 
-    # Healthcare filter (only check if we don't have an image report, because an uploaded report is inherently health-related)
     if not image_bytes:
         healthcare_words = ["health", "pain", "fever", "medicine", "disease", "injury", "symptom", "cough", "doctor"]
         if not any(word in prompt.lower() for word in healthcare_words):
@@ -259,12 +254,10 @@ def get_direct_gemini_response(api_key, prompt, image_bytes=None, image_mime=Non
                 "*Example: Instead of 'How to treat a burn?', try: 'What is the treatment for **pain** or **injury** from a burn?'*"
             )
 
-    # Gemini API payload (multimodal compatible)
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
     
     parts = []
     
-    # If image report is uploaded, convert to inline base64 data
     if image_bytes:
         import base64
         base64_image = base64.b64encode(image_bytes).decode("utf-8")
@@ -275,7 +268,6 @@ def get_direct_gemini_response(api_key, prompt, image_bytes=None, image_mime=Non
             }
         })
         
-    # Append clinical prompt
     parts.append({
         "text": f"You are a healthcare assistant. Analyze the materials and query: {prompt or 'Transcribe this medical report/prescription, extract symptoms or medications, explain their purposes, and detail important precautions and warnings.'}"
     })
@@ -309,10 +301,8 @@ def process_message(prompt, image_bytes=None, image_mime=None):
     if image_bytes:
         display_prompt = f"📁 *[Attached Medical Image/Report]*\n\n{prompt or 'Analyzing uploaded medical image/report...'}"
 
-    # 1. Store user query in session state
     st.session_state.messages.append({"role": "user", "content": display_prompt})
     
-    # 2. Render typing indicator dynamically
     typing_indicator = st.empty()
     typing_indicator.markdown("""
     <div class="chat-avatar">🩺 PhoneDoctor AI</div>
@@ -323,31 +313,25 @@ def process_message(prompt, image_bytes=None, image_mime=None):
     </div>
     """, unsafe_allow_html=True)
     
-    # 3. Request Gemini API Response
     api_key = get_gemini_api_key()
     reply = get_direct_gemini_response(api_key, prompt, image_bytes, image_mime)
     
-    # 4. Remove typing indicator
     typing_indicator.empty()
     
-    # 5. Store bot reply in session state
     st.session_state.messages.append({"role": "assistant", "content": reply})
     st.rerun()
 
 
-# --- Application Layout & Sidebar ---
-
-# Sidebar Title/Logo
 with st.sidebar:
     st.markdown("""
     <div class="sidebar-header">
         <h2 style='color:#10b981; margin:0; font-weight:700;'>🏥 PhoneDoctor</h2>
-        <span style='color:#94a3b8; font-size:12px;'>AI Assistant Workspace</span>
+        <span style='color:#94a3b8; font-size:12px;'>AI HealthCare Assistant</span>
     </div>
     """, unsafe_allow_html=True)
 
-    # API Link Status Section
-    st.markdown("### 🔌 Link Status", unsafe_allow_html=True)
+
+    st.markdown("### 🔗 Link Status", unsafe_allow_html=True)
     
     gemini_api_key = get_gemini_api_key()
     
@@ -365,7 +349,6 @@ with st.sidebar:
         """, unsafe_allow_html=True)
         st.info("💡 Add `GEMINI_API_KEY` to your Streamlit secrets or local `.env` file to connect.")
 
-    # Clear Chat History Button
     st.markdown("---")
     if st.button("🗑️ Clear Chat History", use_container_width=True):
         st.session_state.messages = [
@@ -373,7 +356,6 @@ with st.sidebar:
         ]
         st.rerun()
 
-    # Healthcare Filter Word Showcase
     st.markdown("---")
     st.markdown("### 📋 Supported Medical Triggers")
     st.markdown("To get advice, your query must contain at least one medical-related keyword:")
@@ -382,9 +364,7 @@ with st.sidebar:
     st.markdown(pills_html, unsafe_allow_html=True)
 
 
-# --- Main Workspace Tabs ---
 
-# Premium Top Header
 st.markdown("""
 <div class="header-container">
     <div class="header-logo">🩺</div>
@@ -395,19 +375,16 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Aesthetic Safety Warning Disclaimer
 st.warning(
     "⚠️ **Medical Disclaimer:** PhoneDoctor AI is an automated informational tool for educational purposes only. It does not provide professional medical diagnoses, advice, or treatment. If you are experiencing a medical emergency, please call your local emergency services immediately.",
     icon="🚨"
 )
 
-# Initialize Session State Messages
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "Hello! I am your AI PhoneDoctor assistant. How can I help with your health-related symptoms or medical queries today?"}
     ]
 
-# Render Chat History
 for message in st.session_state.messages:
     role = message["role"]
     content = message["content"]
@@ -423,7 +400,6 @@ for message in st.session_state.messages:
         <div class="chat-bubble chat-bubble-bot">{content}</div>
         """, unsafe_allow_html=True)
 
-# Render Diagnostic Starter Cards if chat is brand new
 if len(st.session_state.messages) == 1:
     st.markdown("""
     <div style="margin: 25px 0 10px 0;">
@@ -444,7 +420,6 @@ if len(st.session_state.messages) == 1:
         if st.button("🩺 General Wellness & Fatigue Check", use_container_width=True, help="Analyze persistent fatigue and vitamin triggers."):
             process_message("I want to check general health symptoms of persistent fatigue and ask what vitamins or checks are recommended.")
 
-# Image Report Vision Uploader Usecase
 st.markdown("---")
 with st.expander("📷 Upload Prescription, Lab Report, or Symptom Image", expanded=False):
     st.markdown("<p style='color:#94a3b8; font-size: 13.5px;'>Upload an image of your prescription, diagnostic report, or symptom. The medical AI will read, translate, and transcribe it for you.</p>", unsafe_allow_html=True)
@@ -456,7 +431,6 @@ with st.expander("📷 Upload Prescription, Lab Report, or Symptom Image", expan
     if uploaded_file:
         st.image(uploaded_file, caption="Selected Medical Document", width=250)
 
-# Chat Input Container
 user_query = st.chat_input("Describe your symptom, pain, or query about the uploaded report here...")
 
 if user_query or (uploaded_file and st.button("🔬 Analyze Uploaded Image", use_container_width=True)):
