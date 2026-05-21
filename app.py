@@ -335,10 +335,19 @@ def get_nearby_medical_facilities(lat, lon, radius=15000):
           node["amenity"="hospital"](around:{radius},{lat},{lon});
           node["amenity"="clinic"](around:{radius},{lat},{lon});
           node["amenity"="doctors"](around:{radius},{lat},{lon});
+          node["healthcare"="hospital"](around:{radius},{lat},{lon});
+          node["healthcare"="clinic"](around:{radius},{lat},{lon});
+          node["healthcare"="doctor"](around:{radius},{lat},{lon});
+          
           way["amenity"="hospital"](around:{radius},{lat},{lon});
           way["amenity"="clinic"](around:{radius},{lat},{lon});
+          way["healthcare"="hospital"](around:{radius},{lat},{lon});
+          way["healthcare"="clinic"](around:{radius},{lat},{lon});
+          
           relation["amenity"="hospital"](around:{radius},{lat},{lon});
           relation["amenity"="clinic"](around:{radius},{lat},{lon});
+          relation["healthcare"="hospital"](around:{radius},{lat},{lon});
+          relation["healthcare"="clinic"](around:{radius},{lat},{lon});
         );
         out body center;
         """
@@ -351,7 +360,7 @@ def get_nearby_medical_facilities(lat, lon, radius=15000):
             for el in elements:
                 tags = el.get("tags", {})
                 name = tags.get("name", tags.get("operator", "Medical Facility"))
-                amenity = el.get("tags", {}).get("amenity", "Facility").lower()
+                amenity = el.get("tags", {}).get("amenity", tags.get("healthcare", "Facility")).lower()
                 
                 # Resolve coordinates
                 facility_lat = el.get("lat") or el.get("center", {}).get("lat")
@@ -619,9 +628,21 @@ with tab_locator:
     st.markdown("""
     <div style="margin-bottom: 20px;">
         <h3 style="color:#10b981; font-weight:700; margin:0 0 5px 0;">📍 Nearby Hospital & Clinic Proximity Locator</h3>
-        <p style="color:#94a3b8; font-size:14.5px;">Find hospitals, local health clinics, or independent doctors within a <b>15km radius (15,000 meters)</b> of your location.</p>
+        <p style="color:#94a3b8; font-size:14.5px;">Find hospitals, local health clinics, or independent doctors within your chosen search radius.</p>
     </div>
     """, unsafe_allow_html=True)
+
+    # Dynamic Search Radius Slider (5km to 50km)
+    st.markdown("<h5 style='color:#10b981; font-weight:600; margin-bottom:5px;'>🛰️ Adjust Scanning Bounds:</h5>", unsafe_allow_html=True)
+    radius_km = st.slider(
+        "Select Scanning Radius (km):", 
+        min_value=5, 
+        max_value=50, 
+        value=15, 
+        step=5,
+        help="If no facilities are found near you, slide to expand the radius up to 50 km!"
+    )
+    radius_meters = radius_km * 1000
 
     # Initialize GPS session states
     if "gps_coords" not in st.session_state:
@@ -630,7 +651,7 @@ with tab_locator:
         st.session_state.gps_requested = False
 
     # Layout for selection methods
-    st.markdown("<h4 style='color:#e2e8f0; font-weight:600;'>🔍 Choose Geolocation Method:</h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='color:#e2e8f0; font-weight:600; margin-top:20px;'>🔍 Choose Geolocation Method:</h4>", unsafe_allow_html=True)
     col_gps, col_sep, col_manual = st.columns([1.2, 0.1, 1.2])
 
     with col_gps:
@@ -649,10 +670,17 @@ with tab_locator:
             if loc and "coords" in loc:
                 lat = loc["coords"]["latitude"]
                 lon = loc["coords"]["longitude"]
-                st.session_state.gps_coords = {"lat": lat, "lon": lon}
-                st.session_state.gps_requested = False
-                st.success(f"📍 GPS coordinates locked successfully!")
-                st.rerun()
+                
+                # Check for (0,0) null coordinate bug (common on sandboxed devices or fake browser GPS blocks)
+                if abs(lat) < 0.1 and abs(lon) < 0.1:
+                    st.error("⚠️ Mock Geolocation Detected: Your browser returned default coordinates close to (0, 0). Location permission is restricted or simulated. Please use Option B (Manual Entry) instead!")
+                    st.session_state.gps_coords = None
+                    st.session_state.gps_requested = False
+                else:
+                    st.session_state.gps_coords = {"lat": lat, "lon": lon}
+                    st.session_state.gps_requested = False
+                    st.success(f"📍 GPS coordinates locked successfully!")
+                    st.rerun()
             elif loc is None:
                 st.info("🌐 Please click 'Allow' in the browser location popup to scan local clinics.")
                 if st.button("❌ Cancel Request", key="cancel_gps_req"):
@@ -686,13 +714,13 @@ with tab_locator:
 
     # Dynamic action buttons
     if st.session_state.gps_coords:
-        search_btn_text = "🔍 Scan Nearby Care around GPS (15 km)"
+        search_btn_text = f"🔍 Scan Nearby Care around GPS ({radius_km} km)"
         active_lat = st.session_state.gps_coords["lat"]
         active_lon = st.session_state.gps_coords["lon"]
         location_label = "your current GPS location"
         search_triggered = st.button(search_btn_text, use_container_width=True, type="primary")
     else:
-        search_btn_text = "🔍 Scan Nearby Care around Manual Entry (15 km)"
+        search_btn_text = f"🔍 Scan Nearby Care around Manual Entry ({radius_km} km)"
         search_triggered = st.button(search_btn_text, use_container_width=True)
         if search_triggered and not search_loc:
             st.error("❌ Please enter a manual location search term or click 'Detect My Location'!")
@@ -711,8 +739,8 @@ with tab_locator:
                     st.error("❌ Could not locate the specified manual location. Please check the spelling.")
 
         if active_lat and active_lon:
-            with st.spinner(f"📡 Querying global medical centers within 15 km of {location_label}..."):
-                facilities = get_nearby_medical_facilities(active_lat, active_lon, radius=15000)
+            with st.spinner(f"📡 Querying global medical centers within {radius_km} km of {location_label}..."):
+                facilities = get_nearby_medical_facilities(active_lat, active_lon, radius=radius_meters)
                 
                 if facilities:
                     st.markdown(f"<h4 style='color:#10b981; margin:20px 0 10px 0;'>🏥 Medical Centers Found ({len(facilities)}):</h4>", unsafe_allow_html=True)
@@ -745,5 +773,5 @@ with tab_locator:
                         </div>
                         """, unsafe_allow_html=True)
                 else:
-                    st.warning(f"⚠️ No hospitals, clinics, or doctors found within 15km of {location_label}.")
+                    st.warning(f"⚠️ No hospitals, clinics, or doctors found within {radius_km}km of {location_label}. Try expanding the radius slider above or searching a larger neighboring city.")
 
