@@ -260,7 +260,12 @@ def get_direct_gemini_response(api_key, prompt):
     # Healthcare filter (exact replicate of main.py)
     healthcare_words = ["health", "pain", "fever", "medicine", "disease", "injury", "symptom", "cough", "doctor"]
     if not any(word in prompt.lower() for word in healthcare_words):
-        return "I can only help with healthcare related topics."
+        return (
+            "💡 **I can only help with healthcare-related topics.**\n\n"
+            "To receive symptom advice or medical information, please make sure your query contains at least one health-related term.\n\n"
+            "**Supported keywords include:** *pain, fever, symptom, medicine, injury, cough, doctor, disease, health*.\n\n"
+            "*Example: Instead of 'How to treat a burn?', try: 'What is the treatment for **pain** or **injury** from a burn?'*"
+        )
 
     # Gemini API payload (exact replicate of main.py)
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
@@ -288,6 +293,34 @@ def get_direct_gemini_response(api_key, prompt):
         return reply
     except Exception as e:
         return f"Direct Connection Error: {str(e)}"
+
+
+def process_message(prompt):
+    """Saves user query, simulates typing, queries the model, and updates chat history."""
+    # 1. Store user query in session state
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    # 2. Render typing indicator dynamically
+    typing_indicator = st.empty()
+    typing_indicator.markdown("""
+    <div class="chat-avatar">🩺 PhoneDoctor AI</div>
+    <div class="typing-indicator">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 3. Request Gemini API Response
+    api_key = get_gemini_api_key()
+    reply = get_direct_gemini_response(api_key, prompt)
+    
+    # 4. Remove typing indicator
+    typing_indicator.empty()
+    
+    # 5. Store bot reply in session state
+    st.session_state.messages.append({"role": "assistant", "content": reply})
+    st.rerun()
 
 
 # --- Application Layout & Sidebar ---
@@ -350,6 +383,12 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# Aesthetic Safety Warning Disclaimer
+st.warning(
+    "⚠️ **Medical Disclaimer:** PhoneDoctor AI is an automated informational tool for educational purposes only. It does not provide professional medical diagnoses, advice, or treatment. If you are experiencing a medical emergency, please call your local emergency services immediately.",
+    icon="🚨"
+)
+
 # Initialize Session State Messages
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -372,42 +411,29 @@ for message in st.session_state.messages:
         <div class="chat-bubble chat-bubble-bot">{content}</div>
         """, unsafe_allow_html=True)
 
+# Render Diagnostic Starter Cards if chat is brand new
+if len(st.session_state.messages) == 1:
+    st.markdown("""
+    <div style="margin: 25px 0 10px 0;">
+        <h4 style="color: #10b981; font-weight: 600; margin-bottom: 5px;">⚡ Quick Diagnostic Starters</h4>
+        <p style="color: #94a3b8; font-size: 14px; margin: 0 0 15px 0;">Select one of the common checkers below to immediately begin your symptom assessment:</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🤒 Persistent Fever Check", use_container_width=True, help="Analyze high body temperature and dry cough symptoms."):
+            process_message("I have a persistent high fever and dry cough. What symptoms should I monitor?")
+        if st.button("🤕 Severe Migraine Checker", use_container_width=True, help="Analyze throbbing headaches and relief recommendations."):
+            process_message("I am experiencing a severe throbbing headache and light sensitivity. What are the common causes and medicine recommendations?")
+    with col2:
+        if st.button("🏃‍♂️ Joint Pain & Muscle Injury", use_container_width=True, help="Analyze joint pain, swelling, and first aid tips."):
+            process_message("What is the best way to manage severe joint pain and swelling after an ankle injury?")
+        if st.button("🩺 General Wellness & Fatigue Check", use_container_width=True, help="Analyze persistent fatigue and vitamin triggers."):
+            process_message("I want to check general health symptoms of persistent fatigue and ask what vitamins or checks are recommended.")
+
 # Chat Input Container
 user_query = st.chat_input("Describe your symptom, pain, or health query here...")
 
 if user_query:
-    # 1. Display User Message immediately
-    st.markdown(f"""
-    <div class="chat-avatar" style="justify-content: flex-end;">You 👤</div>
-    <div class="chat-bubble chat-bubble-user">{user_query}</div>
-    """, unsafe_allow_html=True)
-    
-    # Store user query in state
-    st.session_state.messages.append({"role": "user", "content": user_query})
-    
-    # 2. Render typing indicator
-    typing_indicator = st.empty()
-    typing_indicator.markdown("""
-    <div class="chat-avatar">🩺 PhoneDoctor AI</div>
-    <div class="typing-indicator">
-        <span class="typing-dot"></span>
-        <span class="typing-dot"></span>
-        <span class="typing-dot"></span>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # 3. Request Response
-    gemini_api_key = get_gemini_api_key()
-    reply = get_direct_gemini_response(gemini_api_key, user_query)
-
-    # 4. Remove typing indicator and show response
-    typing_indicator.empty()
-    
-    st.markdown(f"""
-    <div class="chat-avatar">🩺 PhoneDoctor AI</div>
-    <div class="chat-bubble chat-bubble-bot">{reply}</div>
-    """, unsafe_allow_html=True)
-    
-    # Store bot response in state
-    st.session_state.messages.append({"role": "assistant", "content": reply})
-    st.rerun()
+    process_message(user_query)
