@@ -326,8 +326,9 @@ def get_coordinates(location_name):
 
 def get_nearby_medical_facilities(lat, lon, radius=15000):
     """Queries OSM Overpass API for hospitals, clinics, and doctors within a specific radius (default 15km)."""
+    print(f"📡 Querying nearby medical facilities for Lat: {lat}, Lon: {lon}, Radius: {radius}m...")
     try:
-        url = "http://overpass-api.de/api/interpreter"
+        url = "https://overpass-api.de/api/interpreter"
         query = f"""
         [out:json][timeout:15];
         (
@@ -336,12 +337,16 @@ def get_nearby_medical_facilities(lat, lon, radius=15000):
           node["amenity"="doctors"](around:{radius},{lat},{lon});
           way["amenity"="hospital"](around:{radius},{lat},{lon});
           way["amenity"="clinic"](around:{radius},{lat},{lon});
+          relation["amenity"="hospital"](around:{radius},{lat},{lon});
+          relation["amenity"="clinic"](around:{radius},{lat},{lon});
         );
         out body center;
         """
         response = requests.post(url, data={"data": query}, timeout=15.0)
+        print("Overpass Response Code:", response.status_code)
         if response.status_code == 200:
             elements = response.json().get("elements", [])
+            print(f"Found {len(elements)} raw OSM elements.")
             facilities = []
             for el in elements:
                 tags = el.get("tags", {})
@@ -369,9 +374,12 @@ def get_nearby_medical_facilities(lat, lon, radius=15000):
                     "lat": facility_lat,
                     "lon": facility_lon
                 })
+            print(f"Processed {len(facilities)} facilities.")
             return facilities
-    except Exception:
-        pass
+        else:
+            print("Overpass Response Content Error:", response.text)
+    except Exception as e:
+        print("Overpass Query Exception occurred:", str(e))
     return []
 
 
