@@ -113,11 +113,6 @@ st.markdown("""
         color: #ef4444;
         border: 1px solid rgba(239, 68, 68, 0.25);
     }
-    .status-direct {
-        background: rgba(245, 158, 11, 0.12);
-        color: #f59e0b;
-        border: 1px solid rgba(245, 158, 11, 0.25);
-    }
     .status-dot {
         width: 8px;
         height: 8px;
@@ -127,7 +122,6 @@ st.markdown("""
     }
     .status-online .status-dot { background-color: #10b981; box-shadow: 0 0 8px #10b981; }
     .status-offline .status-dot { background-color: #ef4444; box-shadow: 0 0 8px #ef4444; }
-    .status-direct .status-dot { background-color: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
 
     /* Custom Chat Container (Glassmorphic) */
     .chat-bubble {
@@ -215,6 +209,72 @@ st.markdown("""
         color: #cbd5e1;
     }
 
+    /* Proximity Care Cards styling */
+    .clinic-card {
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 15px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        transition: transform 0.2s, border-color 0.2s;
+    }
+    
+    .clinic-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(16, 185, 129, 0.3);
+    }
+    
+    .clinic-name {
+        color: #ffffff;
+        font-size: 17px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        line-height: 1.3;
+    }
+    
+    .clinic-type {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        padding: 3px 9px;
+        border-radius: 10px;
+        margin-bottom: 10px;
+    }
+    
+    .type-hospital { background: rgba(239, 68, 68, 0.12); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+    .type-clinic { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.2); }
+    .type-doctors { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2); }
+    .type-facility { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
+    
+    .clinic-address {
+        color: #94a3b8;
+        font-size: 13.5px;
+        line-height: 1.45;
+        margin-bottom: 15px;
+    }
+    
+    .map-btn {
+        display: inline-flex;
+        align-items: center;
+        background: rgba(16, 185, 129, 0.12);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        color: #10b981 !important;
+        padding: 6px 12px;
+        border-radius: 12px;
+        font-size: 12.5px;
+        font-weight: 500;
+        text-decoration: none !important;
+        transition: background 0.2s;
+    }
+    
+    .map-btn:hover {
+        background: rgba(16, 185, 129, 0.22);
+        color: #10b981 !important;
+        text-decoration: none !important;
+    }
+
     /* Custom scrollbars */
     ::-webkit-scrollbar {
         width: 6px;
@@ -249,33 +309,113 @@ def get_gemini_api_key():
     return os.getenv("GEMINI_API_KEY")
 
 
+def get_coordinates(location_name):
+    """Converts a location name (e.g. city) to lat/lon using OSM Nominatim API."""
+    try:
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {"q": location_name, "format": "json", "limit": 1}
+        headers = {"User-Agent": "PhoneDoctorAI/1.0"}
+        response = requests.get(url, params=params, headers=headers, timeout=6.0)
+        if response.status_code == 200 and len(response.json()) > 0:
+            data = response.json()[0]
+            return float(data["lat"]), float(data["lon"]), data.get("display_name", location_name)
+    except Exception:
+        pass
+    return None
 
 
+def get_nearby_medical_facilities(lat, lon):
+    """Queries OSM Overpass API for hospitals, clinics, and doctors within 5km (5000m)."""
+    try:
+        url = "http://overpass-api.de/api/interpreter"
+        query = f"""
+        [out:json][timeout:15];
+        (
+          node["amenity"="hospital"](around:5000,{lat},{lon});
+          node["amenity"="clinic"](around:5000,{lat},{lon});
+          node["amenity"="doctors"](around:5000,{lat},{lon});
+          way["amenity"="hospital"](around:5000,{lat},{lon});
+          way["amenity"="clinic"](around:5000,{lat},{lon});
+        );
+        out body center;
+        """
+        response = requests.post(url, data={"data": query}, timeout=15.0)
+        if response.status_code == 200:
+            elements = response.json().get("elements", [])
+            facilities = []
+            for el in elements:
+                tags = el.get("tags", {})
+                name = tags.get("name", tags.get("operator", "Medical Facility"))
+                amenity = el.get("tags", {}).get("amenity", "Facility").lower()
+                
+                # Resolve coordinates
+                facility_lat = el.get("lat") or el.get("center", {}).get("lat")
+                facility_lon = el.get("lon") or el.get("center", {}).get("lon")
+                
+                # Construct address details
+                street = tags.get("addr:street", "")
+                housenumber = tags.get("addr:housenumber", "")
+                suburb = tags.get("addr:suburb", tags.get("addr:neighbourhood", ""))
+                city = tags.get("addr:city", "")
+                
+                address = ", ".join(filter(None, [housenumber, street, suburb, city]))
+                if not address:
+                    address = "Proximity search address details not provided"
+                    
+                facilities.append({
+                    "name": name,
+                    "type": amenity,
+                    "address": address,
+                    "lat": facility_lat,
+                    "lon": facility_lon
+                })
+            return facilities
+    except Exception:
+        pass
+    return []
 
-def get_direct_gemini_response(api_key, prompt):
+
+def get_direct_gemini_response(api_key, prompt, image_bytes=None, image_mime=None):
     """Calls Gemini API directly using identical logic, filtering, and prompts as main.py."""
     if not api_key:
         return "System Configuration Error: Gemini API Key is missing. Please add GEMINI_API_KEY in your .env file."
 
-    # Healthcare filter (exact replicate of main.py)
-    healthcare_words = ["health", "pain", "fever", "medicine", "disease", "injury", "symptom", "cough", "doctor"]
-    if not any(word in prompt.lower() for word in healthcare_words):
-        return (
-            "💡 **I can only help with healthcare-related topics.**\n\n"
-            "To receive symptom advice or medical information, please make sure your query contains at least one health-related term.\n\n"
-            "**Supported keywords include:** *pain, fever, symptom, medicine, injury, cough, doctor, disease, health*.\n\n"
-            "*Example: Instead of 'How to treat a burn?', try: 'What is the treatment for **pain** or **injury** from a burn?'*"
-        )
+    # Healthcare filter (only check if we don't have an image report, because an uploaded report is inherently health-related)
+    if not image_bytes:
+        healthcare_words = ["health", "pain", "fever", "medicine", "disease", "injury", "symptom", "cough", "doctor"]
+        if not any(word in prompt.lower() for word in healthcare_words):
+            return (
+                "💡 **I can only help with healthcare-related topics.**\n\n"
+                "To receive symptom advice or medical information, please make sure your query contains at least one health-related term.\n\n"
+                "**Supported keywords include:** *pain, fever, symptom, medicine, injury, cough, doctor, disease, health*.\n\n"
+                "*Example: Instead of 'How to treat a burn?', try: 'What is the treatment for **pain** or **injury** from a burn?'*"
+            )
 
-    # Gemini API payload (exact replicate of main.py)
+    # Gemini API payload (multimodal compatible)
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
+    
+    parts = []
+    
+    # If image report is uploaded, convert to inline base64 data
+    if image_bytes:
+        import base64
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+        parts.append({
+            "inlineData": {
+                "mimeType": image_mime,
+                "data": base64_image
+            }
+        })
+        
+    # Append clinical prompt
+    parts.append({
+        "text": f"You are a healthcare assistant. Analyze the materials and query: {prompt or 'Transcribe this medical report/prescription, extract symptoms or medications, explain their purposes, and detail important precautions and warnings.'}"
+    })
+    
     payload = {
         "contents": [
             {
-                "role": "user",
-                "parts": [
-                    {"text": f"You are a healthcare assistant. {prompt}"}
-                ]
+                "parts": parts
             }
         ]
     }
@@ -295,10 +435,14 @@ def get_direct_gemini_response(api_key, prompt):
         return f"Direct Connection Error: {str(e)}"
 
 
-def process_message(prompt):
+def process_message(prompt, image_bytes=None, image_mime=None):
     """Saves user query, simulates typing, queries the model, and updates chat history."""
+    display_prompt = prompt
+    if image_bytes:
+        display_prompt = f"📁 *[Attached Medical Image/Report]*\n\n{prompt or 'Analyzing uploaded medical image/report...'}"
+
     # 1. Store user query in session state
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.messages.append({"role": "user", "content": display_prompt})
     
     # 2. Render typing indicator dynamically
     typing_indicator = st.empty()
@@ -313,7 +457,7 @@ def process_message(prompt):
     
     # 3. Request Gemini API Response
     api_key = get_gemini_api_key()
-    reply = get_direct_gemini_response(api_key, prompt)
+    reply = get_direct_gemini_response(api_key, prompt, image_bytes, image_mime)
     
     # 4. Remove typing indicator
     typing_indicator.empty()
@@ -370,7 +514,7 @@ with st.sidebar:
     st.markdown(pills_html, unsafe_allow_html=True)
 
 
-# --- Main Chat Interface ---
+# --- Main Workspace Tabs ---
 
 # Premium Top Header
 st.markdown("""
@@ -389,51 +533,137 @@ st.warning(
     icon="🚨"
 )
 
-# Initialize Session State Messages
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Hello! I am your AI PhoneDoctor assistant. How can I help with your health-related symptoms or medical queries today?"}
-    ]
+# Workspace Tab Navigation
+tab_chat, tab_locator = st.tabs(["💬 Doctor Chat", "🏥 Locate Care"])
 
-# Render Chat History
-for message in st.session_state.messages:
-    role = message["role"]
-    content = message["content"]
-    
-    if role == "user":
-        st.markdown(f"""
-        <div class="chat-avatar" style="justify-content: flex-end;">You 👤</div>
-        <div class="chat-bubble chat-bubble-user">{content}</div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown(f"""
-        <div class="chat-avatar">🩺 PhoneDoctor AI</div>
-        <div class="chat-bubble chat-bubble-bot">{content}</div>
-        """, unsafe_allow_html=True)
+# --- Tab 1: Doctor Chat & Vision Analyzer ---
+with tab_chat:
+    # Initialize Session State Messages
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "assistant", "content": "Hello! I am your AI PhoneDoctor assistant. How can I help with your health-related symptoms or medical queries today?"}
+        ]
 
-# Render Diagnostic Starter Cards if chat is brand new
-if len(st.session_state.messages) == 1:
+    # Render Chat History
+    for message in st.session_state.messages:
+        role = message["role"]
+        content = message["content"]
+        
+        if role == "user":
+            st.markdown(f"""
+            <div class="chat-avatar" style="justify-content: flex-end;">You 👤</div>
+            <div class="chat-bubble chat-bubble-user">{content}</div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="chat-avatar">🩺 PhoneDoctor AI</div>
+            <div class="chat-bubble chat-bubble-bot">{content}</div>
+            """, unsafe_allow_html=True)
+
+    # Render Diagnostic Starter Cards if chat is brand new
+    if len(st.session_state.messages) == 1:
+        st.markdown("""
+        <div style="margin: 25px 0 10px 0;">
+            <h4 style="color: #10b981; font-weight: 600; margin-bottom: 5px;">⚡ Quick Diagnostic Starters</h4>
+            <p style="color: #94a3b8; font-size: 14px; margin: 0 0 15px 0;">Select one of the common checkers below to immediately begin your symptom assessment:</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🤒 Persistent Fever Check", use_container_width=True, help="Analyze high body temperature and dry cough symptoms."):
+                process_message("I have a persistent high fever and dry cough. What symptoms should I monitor?")
+            if st.button("🤕 Severe Migraine Checker", use_container_width=True, help="Analyze throbbing headaches and relief recommendations."):
+                process_message("I am experiencing a severe throbbing headache and light sensitivity. What are the common causes and medicine recommendations?")
+        with col2:
+            if st.button("🏃‍♂️ Joint Pain & Muscle Injury", use_container_width=True, help="Analyze joint pain, swelling, and first aid tips."):
+                process_message("What is the best way to manage severe joint pain and swelling after an ankle injury?")
+            if st.button("🩺 General Wellness & Fatigue Check", use_container_width=True, help="Analyze persistent fatigue and vitamin triggers."):
+                process_message("I want to check general health symptoms of persistent fatigue and ask what vitamins or checks are recommended.")
+
+    # Image Report Vision Uploader Usecase
+    st.markdown("---")
+    with st.expander("📷 Upload Prescription, Lab Report, or Symptom Image", expanded=False):
+        st.markdown("<p style='color:#94a3b8; font-size: 13.5px;'>Upload an image of your prescription, diagnostic report, or symptom. The medical AI will read, translate, and transcribe it for you.</p>", unsafe_allow_html=True)
+        uploaded_file = st.file_uploader(
+            "Select medical image/report (PNG, JPG, JPEG)...",
+            type=["png", "jpg", "jpeg"],
+            key="medical_image_uploader"
+        )
+        if uploaded_file:
+            st.image(uploaded_file, caption="Selected Medical Document", width=250)
+
+    # Chat Input Container
+    user_query = st.chat_input("Describe your symptom, pain, or query about the uploaded report here...")
+
+    if user_query or (uploaded_file and st.button("🔬 Analyze Uploaded Image", use_container_width=True)):
+        img_bytes = None
+        img_mime = None
+        if uploaded_file:
+            img_bytes = uploaded_file.getvalue()
+            img_mime = uploaded_file.type
+            
+        process_message(user_query, img_bytes, img_mime)
+
+
+# --- Tab 2: Nearby Hospital & Clinic Finder ---
+with tab_locator:
     st.markdown("""
-    <div style="margin: 25px 0 10px 0;">
-        <h4 style="color: #10b981; font-weight: 600; margin-bottom: 5px;">⚡ Quick Diagnostic Starters</h4>
-        <p style="color: #94a3b8; font-size: 14px; margin: 0 0 15px 0;">Select one of the common checkers below to immediately begin your symptom assessment:</p>
+    <div style="margin-bottom: 20px;">
+        <h3 style="color:#10b981; font-weight:700; margin:0 0 5px 0;">📍 Nearby Hospital & Clinic Proximity Locator</h3>
+        <p style="color:#94a3b8; font-size:14.5px;">Search for hospitals, local health clinics, or independent doctors within 5km (5000m) of your city or region.</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🤒 Persistent Fever Check", use_container_width=True, help="Analyze high body temperature and dry cough symptoms."):
-            process_message("I have a persistent high fever and dry cough. What symptoms should I monitor?")
-        if st.button("🤕 Severe Migraine Checker", use_container_width=True, help="Analyze throbbing headaches and relief recommendations."):
-            process_message("I am experiencing a severe throbbing headache and light sensitivity. What are the common causes and medicine recommendations?")
-    with col2:
-        if st.button("🏃‍♂️ Joint Pain & Muscle Injury", use_container_width=True, help="Analyze joint pain, swelling, and first aid tips."):
-            process_message("What is the best way to manage severe joint pain and swelling after an ankle injury?")
-        if st.button("🩺 General Wellness & Fatigue Check", use_container_width=True, help="Analyze persistent fatigue and vitamin triggers."):
-            process_message("I want to check general health symptoms of persistent fatigue and ask what vitamins or checks are recommended.")
 
-# Chat Input Container
-user_query = st.chat_input("Describe your symptom, pain, or health query here...")
+    # Search Proximity input
+    search_loc = st.text_input(
+        "Enter your City, State, or Neighborhood:", 
+        placeholder="e.g. New York, London, New Delhi, Manhattan",
+        help="Type your location or region and click Find Clinics to check proximity medical centers."
+    )
 
-if user_query:
-    process_message(user_query)
+    if st.button("🔍 Find Clinics & Hospitals", use_container_width=True) and search_loc:
+        with st.spinner("📍 Geocoding location and scanning proximity clinics (5km)..."):
+            coords = get_coordinates(search_loc)
+            
+            if coords:
+                lat, lon, display_name = coords
+                st.success(f"📍 Found Location: **{display_name}** ({lat:.4f}, {lon:.4f})")
+                
+                # Fetch facilities from Overpass API
+                facilities = get_nearby_medical_facilities(lat, lon)
+                
+                if facilities:
+                    st.markdown(f"<h4 style='color:#10b981; margin:20px 0 10px 0;'>🏥 Medical Centers Found ({len(facilities)}):</h4>", unsafe_allow_html=True)
+                    
+                    # Display medical facilities in custom styled cards
+                    for fac in facilities:
+                        name = fac["name"]
+                        type_label = fac["type"]
+                        address = fac["address"]
+                        fac_lat = fac["lat"]
+                        fac_lon = fac["lon"]
+                        
+                        # Set custom badge class based on facility type
+                        badge_class = "type-facility"
+                        if "hospital" in type_label:
+                            badge_class = "type-hospital"
+                        elif "clinic" in type_label:
+                            badge_class = "type-clinic"
+                        elif "doctor" in type_label:
+                            badge_class = "type-doctors"
+                        
+                        map_url = f"https://www.google.com/maps/search/?api=1&query={fac_lat},{fac_lon}"
+                        
+                        st.markdown(f"""
+                        <div class="clinic-card">
+                            <div class="clinic-name">🏨 {name}</div>
+                            <div class="clinic-type {badge_class}">{type_label}</div>
+                            <div class="clinic-address">📍 {address}</div>
+                            <a href="{map_url}" target="_blank" class="map-btn">🗺️ Navigate on Google Maps</a>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.warning("⚠️ No hospitals, clinics, or doctors found within 5km of this location. Try searching for a larger neighboring city or neighborhood.")
+            else:
+                st.error("❌ Could not locate the specified area. Please verify the spelling or try adding a larger city/region.")
