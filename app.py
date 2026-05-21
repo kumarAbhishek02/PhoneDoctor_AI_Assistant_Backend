@@ -209,72 +209,6 @@ st.markdown("""
         color: #cbd5e1;
     }
 
-    /* Proximity Care Cards styling */
-    .clinic-card {
-        background: rgba(15, 23, 42, 0.45);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 16px;
-        padding: 20px;
-        margin-bottom: 15px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-        transition: transform 0.2s, border-color 0.2s;
-    }
-    
-    .clinic-card:hover {
-        transform: translateY(-2px);
-        border-color: rgba(16, 185, 129, 0.3);
-    }
-    
-    .clinic-name {
-        color: #ffffff;
-        font-size: 17px;
-        font-weight: 600;
-        margin-bottom: 4px;
-        line-height: 1.3;
-    }
-    
-    .clinic-type {
-        display: inline-block;
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        padding: 3px 9px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-    }
-    
-    .type-hospital { background: rgba(239, 68, 68, 0.12); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
-    .type-clinic { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.2); }
-    .type-doctors { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2); }
-    .type-facility { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
-    
-    .clinic-address {
-        color: #94a3b8;
-        font-size: 13.5px;
-        line-height: 1.45;
-        margin-bottom: 15px;
-    }
-    
-    .map-btn {
-        display: inline-flex;
-        align-items: center;
-        background: rgba(16, 185, 129, 0.12);
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        color: #10b981 !important;
-        padding: 6px 12px;
-        border-radius: 12px;
-        font-size: 12.5px;
-        font-weight: 500;
-        text-decoration: none !important;
-        transition: background 0.2s;
-    }
-    
-    .map-btn:hover {
-        background: rgba(16, 185, 129, 0.22);
-        color: #10b981 !important;
-        text-decoration: none !important;
-    }
-
     /* Custom scrollbars */
     ::-webkit-scrollbar {
         width: 6px;
@@ -307,89 +241,6 @@ def get_gemini_api_key():
     
     # Fallback to local environment variables
     return os.getenv("GEMINI_API_KEY")
-
-
-def get_coordinates(location_name):
-    """Converts a location name (e.g. city) to lat/lon using OSM Nominatim API."""
-    try:
-        url = "https://nominatim.openstreetmap.org/search"
-        params = {"q": location_name, "format": "json", "limit": 1}
-        headers = {"User-Agent": "PhoneDoctorAI/1.0"}
-        response = requests.get(url, params=params, headers=headers, timeout=6.0)
-        if response.status_code == 200 and len(response.json()) > 0:
-            data = response.json()[0]
-            return float(data["lat"]), float(data["lon"]), data.get("display_name", location_name)
-    except Exception:
-        pass
-    return None
-
-
-def get_nearby_medical_facilities(lat, lon, radius=15000):
-    """Queries OSM Overpass API for hospitals, clinics, and doctors within a specific radius (default 15km)."""
-    print(f"📡 Querying nearby medical facilities for Lat: {lat}, Lon: {lon}, Radius: {radius}m...")
-    try:
-        url = "https://overpass-api.de/api/interpreter"
-        query = f"""
-        [out:json][timeout:15];
-        (
-          node["amenity"="hospital"](around:{radius},{lat},{lon});
-          node["amenity"="clinic"](around:{radius},{lat},{lon});
-          node["amenity"="doctors"](around:{radius},{lat},{lon});
-          node["healthcare"="hospital"](around:{radius},{lat},{lon});
-          node["healthcare"="clinic"](around:{radius},{lat},{lon});
-          node["healthcare"="doctor"](around:{radius},{lat},{lon});
-          
-          way["amenity"="hospital"](around:{radius},{lat},{lon});
-          way["amenity"="clinic"](around:{radius},{lat},{lon});
-          way["healthcare"="hospital"](around:{radius},{lat},{lon});
-          way["healthcare"="clinic"](around:{radius},{lat},{lon});
-          
-          relation["amenity"="hospital"](around:{radius},{lat},{lon});
-          relation["amenity"="clinic"](around:{radius},{lat},{lon});
-          relation["healthcare"="hospital"](around:{radius},{lat},{lon});
-          relation["healthcare"="clinic"](around:{radius},{lat},{lon});
-        );
-        out body center;
-        """
-        response = requests.post(url, data={"data": query}, timeout=15.0)
-        print("Overpass Response Code:", response.status_code)
-        if response.status_code == 200:
-            elements = response.json().get("elements", [])
-            print(f"Found {len(elements)} raw OSM elements.")
-            facilities = []
-            for el in elements:
-                tags = el.get("tags", {})
-                name = tags.get("name", tags.get("operator", "Medical Facility"))
-                amenity = el.get("tags", {}).get("amenity", tags.get("healthcare", "Facility")).lower()
-                
-                # Resolve coordinates
-                facility_lat = el.get("lat") or el.get("center", {}).get("lat")
-                facility_lon = el.get("lon") or el.get("center", {}).get("lon")
-                
-                # Construct address details
-                street = tags.get("addr:street", "")
-                housenumber = tags.get("addr:housenumber", "")
-                suburb = tags.get("addr:suburb", tags.get("addr:neighbourhood", ""))
-                city = tags.get("addr:city", "")
-                
-                address = ", ".join(filter(None, [housenumber, street, suburb, city]))
-                if not address:
-                    address = "Proximity search address details not provided"
-                    
-                facilities.append({
-                    "name": name,
-                    "type": amenity,
-                    "address": address,
-                    "lat": facility_lat,
-                    "lon": facility_lon
-                })
-            print(f"Processed {len(facilities)} facilities.")
-            return facilities
-        else:
-            print("Overpass Response Content Error:", response.text)
-    except Exception as e:
-        print("Overpass Query Exception occurred:", str(e))
-    return []
 
 
 def get_direct_gemini_response(api_key, prompt, image_bytes=None, image_mime=None):
@@ -550,228 +401,71 @@ st.warning(
     icon="🚨"
 )
 
-# Workspace Tab Navigation
-tab_chat, tab_locator = st.tabs(["💬 Doctor Chat", "🏥 Locate Care"])
+# Initialize Session State Messages
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Hello! I am your AI PhoneDoctor assistant. How can I help with your health-related symptoms or medical queries today?"}
+    ]
 
-# --- Tab 1: Doctor Chat & Vision Analyzer ---
-with tab_chat:
-    # Initialize Session State Messages
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "assistant", "content": "Hello! I am your AI PhoneDoctor assistant. How can I help with your health-related symptoms or medical queries today?"}
-        ]
-
-    # Render Chat History
-    for message in st.session_state.messages:
-        role = message["role"]
-        content = message["content"]
-        
-        if role == "user":
-            st.markdown(f"""
-            <div class="chat-avatar" style="justify-content: flex-end;">You 👤</div>
-            <div class="chat-bubble chat-bubble-user">{content}</div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="chat-avatar">🩺 PhoneDoctor AI</div>
-            <div class="chat-bubble chat-bubble-bot">{content}</div>
-            """, unsafe_allow_html=True)
-
-    # Render Diagnostic Starter Cards if chat is brand new
-    if len(st.session_state.messages) == 1:
-        st.markdown("""
-        <div style="margin: 25px 0 10px 0;">
-            <h4 style="color: #10b981; font-weight: 600; margin-bottom: 5px;">⚡ Quick Diagnostic Starters</h4>
-            <p style="color: #94a3b8; font-size: 14px; margin: 0 0 15px 0;">Select one of the common checkers below to immediately begin your symptom assessment:</p>
-        </div>
+# Render Chat History
+for message in st.session_state.messages:
+    role = message["role"]
+    content = message["content"]
+    
+    if role == "user":
+        st.markdown(f"""
+        <div class="chat-avatar" style="justify-content: flex-end;">You 👤</div>
+        <div class="chat-bubble chat-bubble-user">{content}</div>
         """, unsafe_allow_html=True)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🤒 Persistent Fever Check", use_container_width=True, help="Analyze high body temperature and dry cough symptoms."):
-                process_message("I have a persistent high fever and dry cough. What symptoms should I monitor?")
-            if st.button("🤕 Severe Migraine Checker", use_container_width=True, help="Analyze throbbing headaches and relief recommendations."):
-                process_message("I am experiencing a severe throbbing headache and light sensitivity. What are the common causes and medicine recommendations?")
-        with col2:
-            if st.button("🏃‍♂️ Joint Pain & Muscle Injury", use_container_width=True, help="Analyze joint pain, swelling, and first aid tips."):
-                process_message("What is the best way to manage severe joint pain and swelling after an ankle injury?")
-            if st.button("🩺 General Wellness & Fatigue Check", use_container_width=True, help="Analyze persistent fatigue and vitamin triggers."):
-                process_message("I want to check general health symptoms of persistent fatigue and ask what vitamins or checks are recommended.")
+    else:
+        st.markdown(f"""
+        <div class="chat-avatar">🩺 PhoneDoctor AI</div>
+        <div class="chat-bubble chat-bubble-bot">{content}</div>
+        """, unsafe_allow_html=True)
 
-    # Image Report Vision Uploader Usecase
-    st.markdown("---")
-    with st.expander("📷 Upload Prescription, Lab Report, or Symptom Image", expanded=False):
-        st.markdown("<p style='color:#94a3b8; font-size: 13.5px;'>Upload an image of your prescription, diagnostic report, or symptom. The medical AI will read, translate, and transcribe it for you.</p>", unsafe_allow_html=True)
-        uploaded_file = st.file_uploader(
-            "Select medical image/report (PNG, JPG, JPEG)...",
-            type=["png", "jpg", "jpeg"],
-            key="medical_image_uploader"
-        )
-        if uploaded_file:
-            st.image(uploaded_file, caption="Selected Medical Document", width=250)
-
-    # Chat Input Container
-    user_query = st.chat_input("Describe your symptom, pain, or query about the uploaded report here...")
-
-    if user_query or (uploaded_file and st.button("🔬 Analyze Uploaded Image", use_container_width=True)):
-        img_bytes = None
-        img_mime = None
-        if uploaded_file:
-            img_bytes = uploaded_file.getvalue()
-            img_mime = uploaded_file.type
-            
-        process_message(user_query, img_bytes, img_mime)
-
-
-# --- Tab 2: Nearby Hospital & Clinic Finder ---
-with tab_locator:
+# Render Diagnostic Starter Cards if chat is brand new
+if len(st.session_state.messages) == 1:
     st.markdown("""
-    <div style="margin-bottom: 20px;">
-        <h3 style="color:#10b981; font-weight:700; margin:0 0 5px 0;">📍 Nearby Hospital & Clinic Proximity Locator</h3>
-        <p style="color:#94a3b8; font-size:14.5px;">Find hospitals, local health clinics, or independent doctors within your chosen search radius.</p>
+    <div style="margin: 25px 0 10px 0;">
+        <h4 style="color: #10b981; font-weight: 600; margin-bottom: 5px;">⚡ Quick Diagnostic Starters</h4>
+        <p style="color: #94a3b8; font-size: 14px; margin: 0 0 15px 0;">Select one of the common checkers below to immediately begin your symptom assessment:</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🤒 Persistent Fever Check", use_container_width=True, help="Analyze high body temperature and dry cough symptoms."):
+            process_message("I have a persistent high fever and dry cough. What symptoms should I monitor?")
+        if st.button("🤕 Severe Migraine Checker", use_container_width=True, help="Analyze throbbing headaches and relief recommendations."):
+            process_message("I am experiencing a severe throbbing headache and light sensitivity. What are the common causes and medicine recommendations?")
+    with col2:
+        if st.button("🏃‍♂️ Joint Pain & Muscle Injury", use_container_width=True, help="Analyze joint pain, swelling, and first aid tips."):
+            process_message("What is the best way to manage severe joint pain and swelling after an ankle injury?")
+        if st.button("🩺 General Wellness & Fatigue Check", use_container_width=True, help="Analyze persistent fatigue and vitamin triggers."):
+            process_message("I want to check general health symptoms of persistent fatigue and ask what vitamins or checks are recommended.")
 
-    # Dynamic Search Radius Slider (5km to 50km)
-    st.markdown("<h5 style='color:#10b981; font-weight:600; margin-bottom:5px;'>🛰️ Adjust Scanning Bounds:</h5>", unsafe_allow_html=True)
-    radius_km = st.slider(
-        "Select Scanning Radius (km):", 
-        min_value=5, 
-        max_value=50, 
-        value=15, 
-        step=5,
-        help="If no facilities are found near you, slide to expand the radius up to 50 km!"
+# Image Report Vision Uploader Usecase
+st.markdown("---")
+with st.expander("📷 Upload Prescription, Lab Report, or Symptom Image", expanded=False):
+    st.markdown("<p style='color:#94a3b8; font-size: 13.5px;'>Upload an image of your prescription, diagnostic report, or symptom. The medical AI will read, translate, and transcribe it for you.</p>", unsafe_allow_html=True)
+    uploaded_file = st.file_uploader(
+        "Select medical image/report (PNG, JPG, JPEG)...",
+        type=["png", "jpg", "jpeg"],
+        key="medical_image_uploader"
     )
-    radius_meters = radius_km * 1000
+    if uploaded_file:
+        st.image(uploaded_file, caption="Selected Medical Document", width=250)
 
-    # Initialize GPS session states
-    if "gps_coords" not in st.session_state:
-        st.session_state.gps_coords = None
-    if "gps_requested" not in st.session_state:
-        st.session_state.gps_requested = False
+# Chat Input Container
+user_query = st.chat_input("Describe your symptom, pain, or query about the uploaded report here...")
 
-    # Layout for selection methods
-    st.markdown("<h4 style='color:#e2e8f0; font-weight:600; margin-top:20px;'>🔍 Choose Geolocation Method:</h4>", unsafe_allow_html=True)
-    col_gps, col_sep, col_manual = st.columns([1.2, 0.1, 1.2])
+if user_query or (uploaded_file and st.button("🔬 Analyze Uploaded Image", use_container_width=True)):
+    img_bytes = None
+    img_mime = None
+    if uploaded_file:
+        img_bytes = uploaded_file.getvalue()
+        img_mime = uploaded_file.type
+        
+    process_message(user_query, img_bytes, img_mime)
 
-    with col_gps:
-        st.markdown("<div style='margin-bottom:10px;'>🛰️ <b>Option A: Auto-Detect Browser GPS</b></div>", unsafe_allow_html=True)
-        if st.button("📍 Detect My Location", use_container_width=True, type="primary"):
-            st.session_state.gps_requested = True
-            st.session_state.gps_coords = None
-            st.rerun()
-
-        # If location detection is requested
-        if st.session_state.gps_requested:
-            st.markdown("<p style='color:#3b82f6; font-size:13.5px;'>🔄 Contacting browser GPS sensor...</p>", unsafe_allow_html=True)
-            from streamlit_js_eval import get_geolocation
-            loc = get_geolocation()
-            
-            if loc and "coords" in loc:
-                lat = loc["coords"]["latitude"]
-                lon = loc["coords"]["longitude"]
-                
-                # Check for (0,0) null coordinate bug (common on sandboxed devices or fake browser GPS blocks)
-                if abs(lat) < 0.1 and abs(lon) < 0.1:
-                    st.error("⚠️ Mock Geolocation Detected: Your browser returned default coordinates close to (0, 0). Location permission is restricted or simulated. Please use Option B (Manual Entry) instead!")
-                    st.session_state.gps_coords = None
-                    st.session_state.gps_requested = False
-                else:
-                    st.session_state.gps_coords = {"lat": lat, "lon": lon}
-                    st.session_state.gps_requested = False
-                    st.success(f"📍 GPS coordinates locked successfully!")
-                    st.rerun()
-            elif loc is None:
-                st.info("🌐 Please click 'Allow' in the browser location popup to scan local clinics.")
-                if st.button("❌ Cancel Request", key="cancel_gps_req"):
-                    st.session_state.gps_requested = False
-                    st.rerun()
-
-        # If GPS coordinates are active
-        if st.session_state.gps_coords:
-            lat = st.session_state.gps_coords["lat"]
-            lon = st.session_state.gps_coords["lon"]
-            st.success(f"Locked GPS: **{lat:.5f}, {lon:.5f}**")
-            if st.button("🗑️ Clear GPS Coordinates", use_container_width=True):
-                st.session_state.gps_coords = None
-                st.rerun()
-
-    with col_manual:
-        st.markdown("<div style='margin-bottom:10px;'>✍️ <b>Option B: Manual Region Search</b></div>", unsafe_allow_html=True)
-        search_loc = st.text_input(
-            "Enter City, State, or Neighborhood:", 
-            placeholder="e.g. New Delhi, London, Manhattan",
-            help="Type location if device GPS is off or browser permission is denied."
-        )
-
-    # Decide active searching coords
-    active_lat = None
-    active_lon = None
-    location_label = ""
-    search_triggered = False
-
-    st.markdown("---")
-
-    # Dynamic action buttons
-    if st.session_state.gps_coords:
-        search_btn_text = f"🔍 Scan Nearby Care around GPS ({radius_km} km)"
-        active_lat = st.session_state.gps_coords["lat"]
-        active_lon = st.session_state.gps_coords["lon"]
-        location_label = "your current GPS location"
-        search_triggered = st.button(search_btn_text, use_container_width=True, type="primary")
-    else:
-        search_btn_text = f"🔍 Scan Nearby Care around Manual Entry ({radius_km} km)"
-        search_triggered = st.button(search_btn_text, use_container_width=True)
-        if search_triggered and not search_loc:
-            st.error("❌ Please enter a manual location search term or click 'Detect My Location'!")
-            search_triggered = False
-
-    # Execute locator queries
-    if search_triggered:
-        if not active_lat and search_loc:
-            with st.spinner("📍 Geocoding manual address..."):
-                coords = get_coordinates(search_loc)
-                if coords:
-                    active_lat, active_lon, display_name = coords
-                    st.success(f"📍 Found Area: **{display_name}** ({active_lat:.4f}, {active_lon:.4f})")
-                    location_label = display_name
-                else:
-                    st.error("❌ Could not locate the specified manual location. Please check the spelling.")
-
-        if active_lat and active_lon:
-            with st.spinner(f"📡 Querying global medical centers within {radius_km} km of {location_label}..."):
-                facilities = get_nearby_medical_facilities(active_lat, active_lon, radius=radius_meters)
-                
-                if facilities:
-                    st.markdown(f"<h4 style='color:#10b981; margin:20px 0 10px 0;'>🏥 Medical Centers Found ({len(facilities)}):</h4>", unsafe_allow_html=True)
-                    
-                    # Display medical facilities in custom styled cards
-                    for fac in facilities:
-                        name = fac["name"]
-                        type_label = fac["type"]
-                        address = fac["address"]
-                        fac_lat = fac["lat"]
-                        fac_lon = fac["lon"]
-                        
-                        # Set custom badge class based on facility type
-                        badge_class = "type-facility"
-                        if "hospital" in type_label:
-                            badge_class = "type-hospital"
-                        elif "clinic" in type_label:
-                            badge_class = "type-clinic"
-                        elif "doctor" in type_label:
-                            badge_class = "type-doctors"
-                        
-                        map_url = f"https://www.google.com/maps/search/?api=1&query={fac_lat},{fac_lon}"
-                        
-                        st.markdown(f"""
-                        <div class="clinic-card">
-                            <div class="clinic-name">🏨 {name}</div>
-                            <div class="clinic-type {badge_class}">{type_label}</div>
-                            <div class="clinic-address">📍 {address}</div>
-                            <a href="{map_url}" target="_blank" class="map-btn">🗺️ Navigate on Google Maps</a>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.warning(f"⚠️ No hospitals, clinics, or doctors found within {radius_km}km of {location_label}. Try expanding the radius slider above or searching a larger neighboring city.")
 
