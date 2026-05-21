@@ -324,18 +324,18 @@ def get_coordinates(location_name):
     return None
 
 
-def get_nearby_medical_facilities(lat, lon):
-    """Queries OSM Overpass API for hospitals, clinics, and doctors within 5km (5000m)."""
+def get_nearby_medical_facilities(lat, lon, radius=15000):
+    """Queries OSM Overpass API for hospitals, clinics, and doctors within a specific radius (default 15km)."""
     try:
         url = "http://overpass-api.de/api/interpreter"
         query = f"""
         [out:json][timeout:15];
         (
-          node["amenity"="hospital"](around:5000,{lat},{lon});
-          node["amenity"="clinic"](around:5000,{lat},{lon});
-          node["amenity"="doctors"](around:5000,{lat},{lon});
-          way["amenity"="hospital"](around:5000,{lat},{lon});
-          way["amenity"="clinic"](around:5000,{lat},{lon});
+          node["amenity"="hospital"](around:{radius},{lat},{lon});
+          node["amenity"="clinic"](around:{radius},{lat},{lon});
+          node["amenity"="doctors"](around:{radius},{lat},{lon});
+          way["amenity"="hospital"](around:{radius},{lat},{lon});
+          way["amenity"="clinic"](around:{radius},{lat},{lon});
         );
         out body center;
         """
@@ -611,27 +611,100 @@ with tab_locator:
     st.markdown("""
     <div style="margin-bottom: 20px;">
         <h3 style="color:#10b981; font-weight:700; margin:0 0 5px 0;">📍 Nearby Hospital & Clinic Proximity Locator</h3>
-        <p style="color:#94a3b8; font-size:14.5px;">Search for hospitals, local health clinics, or independent doctors within 5km (5000m) of your city or region.</p>
+        <p style="color:#94a3b8; font-size:14.5px;">Find hospitals, local health clinics, or independent doctors within a <b>15km radius (15,000 meters)</b> of your location.</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Search Proximity input
-    search_loc = st.text_input(
-        "Enter your City, State, or Neighborhood:", 
-        placeholder="e.g. New York, London, New Delhi, Manhattan",
-        help="Type your location or region and click Find Clinics to check proximity medical centers."
-    )
+    # Initialize GPS session states
+    if "gps_coords" not in st.session_state:
+        st.session_state.gps_coords = None
+    if "gps_requested" not in st.session_state:
+        st.session_state.gps_requested = False
 
-    if st.button("🔍 Find Clinics & Hospitals", use_container_width=True) and search_loc:
-        with st.spinner("📍 Geocoding location and scanning proximity clinics (5km)..."):
-            coords = get_coordinates(search_loc)
+    # Layout for selection methods
+    st.markdown("<h4 style='color:#e2e8f0; font-weight:600;'>🔍 Choose Geolocation Method:</h4>", unsafe_allow_html=True)
+    col_gps, col_sep, col_manual = st.columns([1.2, 0.1, 1.2])
+
+    with col_gps:
+        st.markdown("<div style='margin-bottom:10px;'>🛰️ <b>Option A: Auto-Detect Browser GPS</b></div>", unsafe_allow_html=True)
+        if st.button("📍 Detect My Location", use_container_width=True, type="primary"):
+            st.session_state.gps_requested = True
+            st.session_state.gps_coords = None
+            st.rerun()
+
+        # If location detection is requested
+        if st.session_state.gps_requested:
+            st.markdown("<p style='color:#3b82f6; font-size:13.5px;'>🔄 Contacting browser GPS sensor...</p>", unsafe_allow_html=True)
+            from streamlit_js_eval import get_geolocation
+            loc = get_geolocation()
             
-            if coords:
-                lat, lon, display_name = coords
-                st.success(f"📍 Found Location: **{display_name}** ({lat:.4f}, {lon:.4f})")
-                
-                # Fetch facilities from Overpass API
-                facilities = get_nearby_medical_facilities(lat, lon)
+            if loc and "coords" in loc:
+                lat = loc["coords"]["latitude"]
+                lon = loc["coords"]["longitude"]
+                st.session_state.gps_coords = {"lat": lat, "lon": lon}
+                st.session_state.gps_requested = False
+                st.success(f"📍 GPS coordinates locked successfully!")
+                st.rerun()
+            elif loc is None:
+                st.info("🌐 Please click 'Allow' in the browser location popup to scan local clinics.")
+                if st.button("❌ Cancel Request", key="cancel_gps_req"):
+                    st.session_state.gps_requested = False
+                    st.rerun()
+
+        # If GPS coordinates are active
+        if st.session_state.gps_coords:
+            lat = st.session_state.gps_coords["lat"]
+            lon = st.session_state.gps_coords["lon"]
+            st.success(f"Locked GPS: **{lat:.5f}, {lon:.5f}**")
+            if st.button("🗑️ Clear GPS Coordinates", use_container_width=True):
+                st.session_state.gps_coords = None
+                st.rerun()
+
+    with col_manual:
+        st.markdown("<div style='margin-bottom:10px;'>✍️ <b>Option B: Manual Region Search</b></div>", unsafe_allow_html=True)
+        search_loc = st.text_input(
+            "Enter City, State, or Neighborhood:", 
+            placeholder="e.g. New Delhi, London, Manhattan",
+            help="Type location if device GPS is off or browser permission is denied."
+        )
+
+    # Decide active searching coords
+    active_lat = None
+    active_lon = None
+    location_label = ""
+    search_triggered = False
+
+    st.markdown("---")
+
+    # Dynamic action buttons
+    if st.session_state.gps_coords:
+        search_btn_text = "🔍 Scan Nearby Care around GPS (15 km)"
+        active_lat = st.session_state.gps_coords["lat"]
+        active_lon = st.session_state.gps_coords["lon"]
+        location_label = "your current GPS location"
+        search_triggered = st.button(search_btn_text, use_container_width=True, type="primary")
+    else:
+        search_btn_text = "🔍 Scan Nearby Care around Manual Entry (15 km)"
+        search_triggered = st.button(search_btn_text, use_container_width=True)
+        if search_triggered and not search_loc:
+            st.error("❌ Please enter a manual location search term or click 'Detect My Location'!")
+            search_triggered = False
+
+    # Execute locator queries
+    if search_triggered:
+        if not active_lat and search_loc:
+            with st.spinner("📍 Geocoding manual address..."):
+                coords = get_coordinates(search_loc)
+                if coords:
+                    active_lat, active_lon, display_name = coords
+                    st.success(f"📍 Found Area: **{display_name}** ({active_lat:.4f}, {active_lon:.4f})")
+                    location_label = display_name
+                else:
+                    st.error("❌ Could not locate the specified manual location. Please check the spelling.")
+
+        if active_lat and active_lon:
+            with st.spinner(f"📡 Querying global medical centers within 15 km of {location_label}..."):
+                facilities = get_nearby_medical_facilities(active_lat, active_lon, radius=15000)
                 
                 if facilities:
                     st.markdown(f"<h4 style='color:#10b981; margin:20px 0 10px 0;'>🏥 Medical Centers Found ({len(facilities)}):</h4>", unsafe_allow_html=True)
@@ -664,6 +737,5 @@ with tab_locator:
                         </div>
                         """, unsafe_allow_html=True)
                 else:
-                    st.warning("⚠️ No hospitals, clinics, or doctors found within 5km of this location. Try searching for a larger neighboring city or neighborhood.")
-            else:
-                st.error("❌ Could not locate the specified area. Please verify the spelling or try adding a larger city/region.")
+                    st.warning(f"⚠️ No hospitals, clinics, or doctors found within 15km of {location_label}.")
+
