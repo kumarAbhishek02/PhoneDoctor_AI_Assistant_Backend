@@ -249,33 +249,7 @@ def get_gemini_api_key():
     return os.getenv("GEMINI_API_KEY")
 
 
-def check_backend_status(url):
-    """Pings the FastAPI server's root endpoint to check if it's running."""
-    try:
-        # FastAPI server root endpoint
-        root_url = url.rstrip("/chat")
-        response = requests.get(root_url, timeout=1.5)
-        if response.status_code == 200:
-            return True
-    except Exception:
-        pass
-    return False
 
-
-def get_backend_response(url, message):
-    """Sends a chat query to the FastAPI backend."""
-    try:
-        response = requests.post(
-            f"{url.rstrip('/')}/chat",
-            json={"message": message},
-            timeout=30.0
-        )
-        if response.status_code == 200:
-            return response.json().get("reply", "No response content received.")
-        else:
-            return f"Error: Received status code {response.status_code} from backend."
-    except Exception as e:
-        return f"Connection Failed: Could not connect to FastAPI server. Details: {str(e)}"
 
 
 def get_direct_gemini_response(api_key, prompt):
@@ -327,47 +301,24 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # Configuration Section
-    st.markdown("### ⚙️ Connection Settings", unsafe_allow_html=True)
-    
-    backend_url = st.text_input("FastAPI Backend URL", value="http://localhost:8000")
-    
-    # Check Backend Status dynamically
-    is_backend_online = check_backend_status(backend_url)
-    
-    # Connection Mode Selection
-    options = ["FastAPI Backend Server", "Direct Gemini API (Fallback)"]
-    default_idx = 0 if is_backend_online else 1
-    
-    selected_mode = st.radio(
-        "Communication Channel",
-        options=options,
-        index=default_idx,
-        help="Select 'FastAPI Backend Server' if your main.py server is running. Select 'Direct Gemini API' to query the API directly."
-    )
-
-    # Visual Connection Status
+    # API Link Status Section
     st.markdown("### 🔌 Link Status", unsafe_allow_html=True)
-    if is_backend_online:
+    
+    gemini_api_key = get_gemini_api_key()
+    
+    if gemini_api_key:
         st.markdown("""
         <div class="status-badge status-online">
-            <span class="status-dot"></span>Backend Server: Online
+            <span class="status-dot"></span>Gemini Link: Connected
         </div>
         """, unsafe_allow_html=True)
     else:
         st.markdown("""
         <div class="status-badge status-offline">
-            <span class="status-dot"></span>Backend Server: Offline
+            <span class="status-dot"></span>Gemini Link: Disconnected
         </div>
         """, unsafe_allow_html=True)
-        st.info("💡 To start the FastAPI server, run in your terminal:\n`uvicorn main:app --reload`")
-
-    if selected_mode == "Direct Gemini API (Fallback)":
-        st.markdown("""
-        <div class="status-badge status-direct">
-            <span class="status-dot"></span>Active Mode: Direct AI (Local)
-        </div>
-        """, unsafe_allow_html=True)
+        st.info("💡 Add `GEMINI_API_KEY` to your Streamlit secrets or local `.env` file to connect.")
 
     # Clear Chat History Button
     st.markdown("---")
@@ -446,15 +397,8 @@ if user_query:
     """, unsafe_allow_html=True)
     
     # 3. Request Response
-    if selected_mode == "FastAPI Backend Server":
-        if is_backend_online:
-            reply = get_backend_response(backend_url, user_query)
-        else:
-            reply = "⚠️ The FastAPI Backend Server is offline. Please switch the communication channel to 'Direct Gemini API' in the sidebar configuration, or start the server using `uvicorn main:app --reload`."
-    else:
-        # Direct Gemini API Mode
-        gemini_api_key = get_gemini_api_key()
-        reply = get_direct_gemini_response(gemini_api_key, user_query)
+    gemini_api_key = get_gemini_api_key()
+    reply = get_direct_gemini_response(gemini_api_key, user_query)
 
     # 4. Remove typing indicator and show response
     typing_indicator.empty()
