@@ -1,10 +1,11 @@
 import os
 import requests
 import streamlit as st
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Streamlit Page Configuration
 st.set_page_config(
